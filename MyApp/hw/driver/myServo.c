@@ -1,4 +1,3 @@
-/* myServo.c */
 #include "myServo.h"
 #include "tim.h"
 
