@@ -6,7 +6,7 @@ static const uint32_t joyChannel[2] = {ADC_CHANNEL_0, ADC_CHANNEL_1};
 
 static uint16_t joyCenter[2] = {2048, 2048};
 static float    joyRatio[2]  = {0.0f, 0.0f};
-
+//Joystick값을 읽어옴
 static uint16_t joystickReadRaw(uint8_t axis)
 {
     ADC_ChannelConfTypeDef sConfig = {0};
@@ -31,14 +31,14 @@ void joystickInit(void)
 {
     uint32_t sum[2] = {0, 0};
 
-    /* 부팅 시 손을 뗀 상태의 중립값을 실측해서 기준으로 삼는다 */
+    // 부팅 시 손을 뗀 상태의 중립값을 실측해서 기준으로 삼는다
     for (uint8_t i = 0; i < 16; i++)
     {
         sum[JOY_AXIS_X] += joystickReadRaw(JOY_AXIS_X);
         sum[JOY_AXIS_Y] += joystickReadRaw(JOY_AXIS_Y);
         HAL_Delay(5);
     }
-
+    //16으로 나눠 평균
     joyCenter[JOY_AXIS_X] = (uint16_t)(sum[JOY_AXIS_X] / 16);
     joyCenter[JOY_AXIS_Y] = (uint16_t)(sum[JOY_AXIS_Y] / 16);
 }
