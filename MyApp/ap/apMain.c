@@ -7,7 +7,7 @@
 
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
 static float panAngle  = 90.0f;
-static float tiltAngle = 180.0f;
+static float tiltAngle = 0.0f;
 
 static float aimClamp(float deg)
 {
@@ -97,7 +97,6 @@ void apMain(void)
         {
             tPrev1000 = tNow;
 
-            HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
         }
     }
 }
