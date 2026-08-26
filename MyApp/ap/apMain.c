@@ -2,7 +2,9 @@
 #include "myServo.h"
 #include "myJoystick.h"
 #include "myLaser.h"
+#include "myLcd1602.h"
 #include "stm32f4xx_hal.h"
+#include "mySsd1306.h"
 #include <stdint.h>
 
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
@@ -37,6 +39,20 @@ void apInit(void)
     servoInit();
     joystickInit();
     laserInit();
+
+    if (lcd1602Init())
+    {
+        lcd1602Cursor(0, 0);
+        lcd1602Print("SYSTEM READY    ");
+        lcd1602Cursor(1, 0);
+        lcd1602Print("LCD1602 OK      ");
+    }
+
+    if (ssd1306Init())
+    {
+        ssd1306DrawString(22, 28, "SYSTEM READY", SSD1306_COLOR_WHITE);
+        ssd1306Update();
+    }
 }
 
 void apMain(void)
