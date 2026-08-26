@@ -7,7 +7,7 @@
 
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
 static float panAngle  = 90.0f;
-static float tiltAngle = 90.0f;
+static float tiltAngle = 180.0f;
 
 static float aimClamp(float deg)
 {
@@ -46,8 +46,6 @@ void apMain(void)
     uint32_t tPrev100  = 0;
     uint32_t tPrev250  = 0;
     uint32_t tPrev1000 = 0;
-    //테스트용 코드 (pan 각도 조절)
-    servoSetTarget(SERVO_PAN,  90.0);
     while (1)
     {
         uint32_t tNow = HAL_GetTick();
@@ -55,7 +53,6 @@ void apMain(void)
         {
             tPrev20 = tNow;
 
-            laserUpdate();
         }
         /* 50ms : 조이스틱 읽기 -> 서보 각도 갱신 */
         if (tNow - tPrev50 >= 50)

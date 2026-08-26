@@ -1,14 +1,13 @@
 /* myLaser.c */
 #include "myLaser.h"
+#include "stm32f4xx_hal_gpio.h"
 
 typedef enum {
     LASER_IDLE = 0,
-    LASER_ON,
-    LASER_COOL
+    LASER_ON
 } LaserState_t;
 
 static LaserState_t laserState = LASER_IDLE;
-static uint32_t     laserTick  = 0;
 
 void laserInit(void)
 {
@@ -16,39 +15,31 @@ void laserInit(void)
 
     laserState = LASER_IDLE;
 }
-
+//Laser GPIO port Write
 uint8_t laserFire(void)
 {
-    if (laserState != LASER_IDLE)
-        return 0;
-
-    HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_SET);
-
-    laserState = LASER_ON;
-    laserTick  = HAL_GetTick();
-
+    if (laserState == LASER_IDLE)
+    {
+        HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_SET);
+        laserState = LASER_ON;
+    }
+    else
+    {
+        HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
+        laserState = LASER_IDLE;
+    }  
     return 1;
 }
-
+//LaserState에 따라 Pin 상태 갱신 -> 토글 방식은 필요 없음
 void laserUpdate(void)
 {
-    uint32_t tNow = HAL_GetTick();
+    //uint32_t tNow = HAL_GetTick();
 
     switch (laserState)
     {
         case LASER_ON:
-            if (tNow - laserTick >= LASER_FIRE_MS)
-            {
                 HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
-
-                laserState = LASER_COOL;
-                laserTick  = tNow;
-            }
-            break;
-
-        case LASER_COOL:
-            if (tNow - laserTick >= LASER_COOL_MS)
-                laserState = LASER_IDLE;
+                //laserTick  = tNow;
             break;
 
         default:

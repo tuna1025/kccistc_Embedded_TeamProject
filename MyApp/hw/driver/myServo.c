@@ -2,7 +2,7 @@
 #include "tim.h"
 
 static float servoAngle[2] = {90.0f, 90.0f};
-
+//가동범위 제한
 static uint16_t servoDegToUs(float deg)
 {
     if (deg < 0.0f)                deg = 0.0f;
@@ -16,17 +16,17 @@ void servoInit(void)
 {
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-
-    servoSetAngle(SERVO_PAN,  0.0f);
-    servoSetAngle(SERVO_TILT, 0.0f);
+    //시작 각도 0, 90
+    servoSetTarget(SERVO_PAN,  90.0f);
+    servoSetTarget(SERVO_TILT, 90.0f);
 }
-
+//서보모터 설정한 각도로 이동
 void servoSetAngle(uint8_t ch, float deg)
 {
     uint16_t us = servoDegToUs(deg);
 
     if (ch == SERVO_PAN)
-        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, us);
+        __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_1, us);   //PWM을 통한 서보모터 제어
     else
         __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, us);
 
@@ -38,7 +38,7 @@ float servoGetAngle(uint8_t ch)
     return servoAngle[ch];
 }
 static float servoTarget[2] = {90.0f, 90.0f};
-
+//급발진을 막기 위해 목표 각도 설정
 void servoSetTarget(uint8_t ch, float deg)
 {
     if (deg < 0.0f)                 deg = 0.0f;
@@ -46,7 +46,7 @@ void servoSetTarget(uint8_t ch, float deg)
 
     servoTarget[ch] = deg;
 }
-
+//목표 각도로 시행당 2도로 이동(SERVO_STEP_DEG만큼)
 void servoUpdate(void)
 {
     for (uint8_t ch = 0; ch < 2; ch++)
