@@ -1,4 +1,5 @@
 #include "apMain.h"
+<<<<<<< HEAD
 #include "myServo.h"
 #include "myJoystick.h"
 #include "myLaser.h"
@@ -27,37 +28,20 @@ static uint8_t btnFirePressed(void)
 
     return edge;
 }
+=======
+#include "myGame.h"
+>>>>>>> origin/develop
 
 void apInit(void)
 {
-    servoInit();
-    joystickInit();
-    laserInit();
-
-    if (lcd1602Init())
-    {
-        lcd1602Cursor(0, 0);
-        lcd1602Print("SYSTEM READY    ");
-        lcd1602Cursor(1, 0);
-        lcd1602Print("LCD1602 OK      ");
-    }
-
-    if (ssd1306Init())
-    {
-        ssd1306DrawString(22, 28, "SYSTEM READY", SSD1306_COLOR_WHITE);
-        ssd1306Update();
-    }
+    gameInit();
 }
 
 void apMain(void)
 {
-    uint32_t tPrev20   = 0;
-    uint32_t tPrev50   = 0;
-    uint32_t tPrev100  = 0;
-    uint32_t tPrev250  = 0;
-    uint32_t tPrev1000 = 0;
     while (1)
     {
+<<<<<<< HEAD
         uint32_t tNow = HAL_GetTick();
         if (tNow - tPrev20 >= 20)
         {
@@ -119,5 +103,8 @@ void apMain(void)
             tPrev1000 = tNow;
 
         }
+=======
+        gameUpdate();
+>>>>>>> origin/develop
     }
 }

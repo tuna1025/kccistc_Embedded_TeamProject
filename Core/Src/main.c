@@ -20,6 +20,7 @@
 #include "main.h"
 #include "adc.h"
 #include "i2c.h"
+#include "spi.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -94,8 +95,10 @@ int main(void)
   MX_TIM3_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
   apInit();
+  apMain();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -105,7 +108,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    apMain();
   }
   /* USER CODE END 3 */
 }
