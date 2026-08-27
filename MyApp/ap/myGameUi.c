@@ -52,10 +52,12 @@ void gameUiInit(void)
 
 void gameUiRenderMainMenu(uint8_t selected)
 {
-    static const char *items[3] = {"NORMAL", "SCANNING", "RANKING"};
+    static const char *items[4] = {
+        "NORMAL", "GUEST", "SCANNING", "RANKING"
+    };
     char line[17];
 
-    snprintf(line, sizeof(line), ">%s", items[selected % 3U]);
+    snprintf(line, sizeof(line), ">%s", items[selected % 4U]);
     lcdWriteLine(0, "SELECT MODE");
     lcdWriteLine(1, line);
 
@@ -63,13 +65,26 @@ void gameUiRenderMainMenu(uint8_t selected)
         return;
     ssd1306Clear();
     oledDrawCentered(0, "MODE SELECT", 1);
-    for (uint8_t i = 0; i < 3U; i++)
+    for (uint8_t i = 0; i < 4U; i++)
     {
         snprintf(line, sizeof(line), "%c %s",
                  i == selected ? '>' : ' ', items[i]);
-        ssd1306DrawString(18, (int16_t)(18 + i * 14), line,
+        ssd1306DrawString(18, (int16_t)(15 + i * 12), line,
                           SSD1306_COLOR_WHITE);
     }
+    ssd1306Update();
+}
+
+void gameUiRenderGuest(void)
+{
+    lcdWriteLine(0, "PLAYER: GUEST");
+    lcdWriteLine(1, "NO RANKING SAVE");
+
+    if (!s_oledReady)
+        return;
+    ssd1306Clear();
+    oledDrawCentered(8, "GUEST MODE", 2);
+    oledDrawCentered(40, "PRESS START", 1);
     ssd1306Update();
 }
 
@@ -285,6 +300,27 @@ void gameUiRenderGameOverMenu(uint16_t score, uint16_t bestScore,
         return;
     ssd1306Clear();
     oledDrawCentered(1, "GAME OVER", 1);
+    snprintf(line, sizeof(line), "SCORE %u", score);
+    oledDrawCentered(16, line, 1);
+    ssd1306DrawString(15, 36, selected == 0U ? "> RETRY" : "  RETRY",
+                      SSD1306_COLOR_WHITE);
+    ssd1306DrawString(70, 36, selected == 1U ? "> MENU" : "  MENU",
+                      SSD1306_COLOR_WHITE);
+    ssd1306Update();
+}
+
+void gameUiRenderGuestGameOverMenu(uint16_t score, uint8_t selected)
+{
+    char line[20];
+    snprintf(line, sizeof(line), "GUEST SCORE:%02u",
+             (unsigned int)(score % 100U));
+    lcdWriteLine(0, line);
+    lcdWriteLine(1, selected == 0U ? ">RETRY   MENU" : " RETRY  >MENU");
+
+    if (!s_oledReady)
+        return;
+    ssd1306Clear();
+    oledDrawCentered(1, "GUEST OVER", 1);
     snprintf(line, sizeof(line), "SCORE %u", score);
     oledDrawCentered(16, line, 1);
     ssd1306DrawString(15, 36, selected == 0U ? "> RETRY" : "  RETRY",

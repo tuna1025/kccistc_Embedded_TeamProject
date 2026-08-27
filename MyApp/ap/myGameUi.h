@@ -6,8 +6,11 @@
 /** @brief LCD1602와 SSD1306 OLED를 초기화한다. */
 void gameUiInit(void);
 
-/** @brief 메인 모드 선택 메뉴를 표시한다. @param selected 선택 항목(0: 일반, 1: 스캐닝, 2: 랭킹) */
+/** @brief 메인 메뉴를 표시한다. @param selected 0: 일반, 1: 게스트, 2: 스캐닝, 3: 랭킹 */
 void gameUiRenderMainMenu(uint8_t selected);
+
+/** @brief RFID 없이 게임을 시작하는 게스트 준비 화면을 표시한다. */
+void gameUiRenderGuest(void);
 
 /** @brief 아직 구현되지 않은 스캐닝 모드 안내 화면을 표시한다. */
 void gameUiRenderScanning(void);
@@ -68,6 +71,9 @@ void gameUiRenderGameOver(uint16_t score, uint16_t bestScore, uint8_t rank);
  */
 void gameUiRenderGameOverMenu(uint16_t score, uint16_t bestScore,
                               uint8_t rank, uint8_t selected);
+
+/** @brief 랭킹에 저장하지 않는 게스트 게임 종료 메뉴를 표시한다. */
+void gameUiRenderGuestGameOverMenu(uint16_t score, uint8_t selected);
 
 /** @brief 시험용으로 RFID UID를 LCD에 표시한다. */
 void gameUiRenderRfidUid(const uint8_t *uid, uint8_t size);
