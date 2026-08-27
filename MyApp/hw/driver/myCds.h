@@ -7,7 +7,7 @@
 
 #define SENSOR_COUNT 3
 #define WAIT_TIME 1000
-#define LIGHT_THRESHOLD 250
+#define LIGHT_THRESHOLD 375
 
 typedef enum{
     CDS_SELECT,
