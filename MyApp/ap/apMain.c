@@ -5,6 +5,7 @@
 #include "myLcd1602.h"
 #include "stm32f4xx_hal.h"
 #include "mySsd1306.h"
+#include "myTracking.h"
 #include <stdint.h>
 
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
@@ -61,22 +62,30 @@ void apMain(void)
         if (tNow - tPrev20 >= 20)
         {
             tPrev20 = tNow;
+            trackingUpdate();
 
         }
         /* 50ms : 조이스틱 읽기 -> 서보 각도 갱신 */
         if (tNow - tPrev50 >= 50)
         {
             tPrev50 = tNow;
-
-            joystickUpdate();
-
-            panAngle  += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
-            tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
-            panAngle  = servoClampAngle(SERVO_PAN,  panAngle);
-            tiltAngle = servoClampAngle(SERVO_TILT, tiltAngle);
-            servoSetTarget(SERVO_PAN,  panAngle);
-            servoSetTarget(SERVO_TILT, tiltAngle);
-
+            if(trackingGetState())
+            {
+            /* 자동 모드 — 조준/발사 입력 무시.
+            버튼은 중단용으로만 사용 */
+                if (btnFirePressed())
+                    trackingAbort();
+            }
+            else
+            {
+                joystickUpdate();
+                panAngle  += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
+                tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
+                panAngle  = servoClampAngle(SERVO_PAN,  panAngle);
+                tiltAngle = servoClampAngle(SERVO_TILT, tiltAngle);
+                servoSetTarget(SERVO_PAN,  panAngle);
+                servoSetTarget(SERVO_TILT, tiltAngle);
+            }
             servoUpdate();
             if (btnFirePressed())
                 laserFire();
@@ -86,7 +95,12 @@ void apMain(void)
         if (tNow - tPrev100 >= 100)
         {
             tPrev100 = tNow;
-
+            //자동 조준 버튼 활성화(추가 필요)
+            /*if(tracking_button_is_pressed)
+            {
+                trackingStart();
+            }
+            */
             /* buttonUpdate();  */
             /* laserUpdate();   */
         }

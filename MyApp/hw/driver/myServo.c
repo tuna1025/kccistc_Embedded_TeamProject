@@ -74,3 +74,13 @@ void servoUpdate(void)
             servoSetAngle(ch, servoTarget[ch]);
     }
 }
+// servoUpdate()가 목표에 도달했는지 판정 -> Tracking에서 사용
+uint8_t servoIsAtTarget(uint8_t ch)
+{
+    float diff = servoTarget[ch] - servoAngle[ch];
+
+    if (diff < 0.0f)
+        diff = -diff;
+
+    return (diff < 0.01f) ? 1 : 0;
+}
