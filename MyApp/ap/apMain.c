@@ -33,7 +33,6 @@ void apInit(void)
     servoInit();
     joystickInit();
     laserInit();
-    cdsInit();
     if (lcd1602Init())
     {
         lcd1602Cursor(0, 0);
