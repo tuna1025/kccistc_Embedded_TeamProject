@@ -9,15 +9,8 @@
 
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
 static float panAngle  = 90.0f;
-static float tiltAngle = 0.0f;
+static float tiltAngle = 120.0f;
 
-static float aimClamp(float deg)
-{
-    if (deg < 0.0f)                 deg = 0.0f;
-    if (deg > (float)SERVO_MAX_DEG) deg = (float)SERVO_MAX_DEG;
-
-    return deg;
-}
 
 static uint8_t btnPrev = 1;   /* 풀업이라 평소 High */
 
@@ -79,10 +72,8 @@ void apMain(void)
 
             panAngle  += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
             tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
-
-            panAngle  = aimClamp(panAngle);
-            tiltAngle = aimClamp(tiltAngle);
-
+            panAngle  = servoClampAngle(SERVO_PAN,  panAngle);
+            tiltAngle = servoClampAngle(SERVO_TILT, tiltAngle);
             servoSetTarget(SERVO_PAN,  panAngle);
             servoSetTarget(SERVO_TILT, tiltAngle);
 
