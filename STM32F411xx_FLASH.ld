@@ -56,7 +56,8 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 512K
+/* Sector 7 (0x08060000-0x0807FFFF) is reserved for RFID rankings. */
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 384K
 }
 
 /* Highest address of the user mode stack */
