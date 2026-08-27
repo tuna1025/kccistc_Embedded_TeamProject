@@ -21,7 +21,7 @@ static void buzzer_tone(uint32_t freq){
     buzzerStart();
 }
 void startRhythm(){
-    buzzer_tone(330);
+    buzzer_tone(784);
     HAL_Delay(500);
 
     buzzerStop();
