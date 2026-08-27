@@ -52,6 +52,7 @@ static uint8_t s_mainMenuIndex = 0;
 static uint8_t s_gameOverMenuIndex = 0;
 static uint8_t s_rankingIndex = 0;
 static bool s_menuAxisLatched = false;
+static bool s_guestMode = false;
 
 static bool gameIsActive(void)
 {
@@ -107,6 +108,7 @@ static void renderRanking(void)
 static void enterMainMenu(void)
 {
     s_state = GAME_STATE_MAIN_MENU;
+    s_guestMode = false;
     s_mainMenuIndex = 0;
     s_menuAxisLatched = false;
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
@@ -123,6 +125,7 @@ static uint32_t remainingSeconds(uint32_t now)
 
 static void enterTagWait(uint32_t now)
 {
+    s_guestMode = false;
     s_state = GAME_STATE_TAG_WAIT;
     s_stateTick = now;
     s_score = 0;
@@ -156,11 +159,19 @@ static void enterGameOver(uint32_t now)
     s_state = GAME_STATE_OVER;
     s_stateTick = now;
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
-    (void)rankingSubmitScore(s_score);
     s_gameOverMenuIndex = 0;
     s_menuAxisLatched = false;
-    gameUiRenderGameOverMenu(s_score, rankingGetCurrentBest(),
-                             rankingGetCurrentRank(), s_gameOverMenuIndex);
+    if (s_guestMode)
+    {
+        gameUiRenderGuestGameOverMenu(s_score, s_gameOverMenuIndex);
+    }
+    else
+    {
+        (void)rankingSubmitScore(s_score);
+        gameUiRenderGameOverMenu(s_score, rankingGetCurrentBest(),
+                                 rankingGetCurrentRank(),
+                                 s_gameOverMenuIndex);
+    }
 }
 
 void gameHitDetected(void)
@@ -181,6 +192,12 @@ static void handleButton(uint32_t now)
         if (s_mainMenuIndex == 0U)
             enterTagWait(now);
         else if (s_mainMenuIndex == 1U)
+        {
+            s_guestMode = true;
+            s_state = GAME_STATE_PLAYER_READY;
+            gameUiRenderGuest();
+        }
+        else if (s_mainMenuIndex == 2U)
         {
             s_state = GAME_STATE_SCANNING;
             gameUiRenderScanning();
@@ -354,7 +371,8 @@ void gameUpdate(void)
         {
             if (s_state == GAME_STATE_MAIN_MENU)
             {
-                s_mainMenuIndex = (uint8_t)((s_mainMenuIndex + direction + 3) % 3);
+                s_mainMenuIndex =
+                    (uint8_t)((s_mainMenuIndex + direction + 4) % 4);
                 gameUiRenderMainMenu(s_mainMenuIndex);
             }
             else if (s_state == GAME_STATE_RANKING)
@@ -370,9 +388,14 @@ void gameUpdate(void)
             else if (s_state == GAME_STATE_OVER)
             {
                 s_gameOverMenuIndex ^= 1U;
-                gameUiRenderGameOverMenu(s_score, rankingGetCurrentBest(),
-                                         rankingGetCurrentRank(),
-                                         s_gameOverMenuIndex);
+                if (s_guestMode)
+                    gameUiRenderGuestGameOverMenu(s_score,
+                                                  s_gameOverMenuIndex);
+                else
+                    gameUiRenderGameOverMenu(s_score,
+                                             rankingGetCurrentBest(),
+                                             rankingGetCurrentRank(),
+                                             s_gameOverMenuIndex);
             }
         }
 
