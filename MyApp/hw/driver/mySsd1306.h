@@ -37,6 +37,10 @@ void ssd1306FillRect(int16_t x, int16_t y, int16_t w, int16_t h,
                      uint8_t color);
 void ssd1306DrawChar(int16_t x, int16_t y, char ch, uint8_t color);
 void ssd1306DrawString(int16_t x, int16_t y, const char *str, uint8_t color);
+void ssd1306DrawCharScaled(int16_t x, int16_t y, char ch, uint8_t color,
+                           uint8_t scale);
+void ssd1306DrawStringScaled(int16_t x, int16_t y, const char *str,
+                             uint8_t color, uint8_t scale);
 void ssd1306DrawIcon(int16_t x, int16_t y, ssd1306Icon_t icon,
                      uint8_t color);
 void ssd1306DrawBomb(uint8_t color);

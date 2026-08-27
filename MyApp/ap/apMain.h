@@ -3,5 +3,6 @@
 
 void apInit(void);
 void apMain(void);
+void apGameHitDetected(void);
 
 #endif /* AP_MAIN_H */
