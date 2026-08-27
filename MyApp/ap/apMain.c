@@ -1,4 +1,5 @@
 #include "apMain.h"
+#include "myCds.h"
 #include "myServo.h"
 #include "myJoystick.h"
 #include "myLaser.h"
@@ -32,7 +33,6 @@ void apInit(void)
     servoInit();
     joystickInit();
     laserInit();
-
     if (lcd1602Init())
     {
         lcd1602Cursor(0, 0);
@@ -50,6 +50,7 @@ void apInit(void)
 
 void apMain(void)
 {
+    
     uint32_t tPrev20   = 0;
     uint32_t tPrev50   = 0;
     uint32_t tPrev100  = 0;
@@ -57,6 +58,7 @@ void apMain(void)
     uint32_t tPrev1000 = 0;
     while (1)
     {
+        cdsUpdate();
         uint32_t tNow = HAL_GetTick();
         if (tNow - tPrev20 >= 20)
         {
