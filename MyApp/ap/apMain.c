@@ -1,10 +1,12 @@
 #include "apMain.h"
+#include "myCds.h"
 #include "myServo.h"
 #include "myJoystick.h"
 #include "myLaser.h"
 #include "stm32f4xx_hal.h"
 #include <stdint.h>
 #include "myPiezo.h"
+#include "stm32f4xx_hal_adc.h"
 #define AIM_SPEED_DEG   1.5f    /* 50ms당 최대 이동 각도 */
 static float panAngle  = 90.0f;
 static float tiltAngle = 90.0f;
@@ -37,11 +39,15 @@ void apInit(void)
     servoInit();
     joystickInit();
     laserInit();
+    cdsInit();
 }
+volatile uint32_t adc0 = 0;
+volatile uint32_t adc1 = 0;
+volatile uint32_t adc4 = 0;
 
 void apMain(void)
 {
-    startRhythm();
+    //startRhythm();
     uint32_t tPrev20   = 0;
     uint32_t tPrev50   = 0;
     uint32_t tPrev100  = 0;
@@ -51,6 +57,7 @@ void apMain(void)
     // servoSetTarget(SERVO_PAN,  90.0);
     while (1)
     {
+        cdsUpdate();
         // uint32_t tNow = HAL_GetTick();
         // if (tNow - tPrev20 >= 20)
         // {
