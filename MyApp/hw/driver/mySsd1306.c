@@ -139,7 +139,9 @@ void ssd1306Update(void){
     writeCommand(0);
     writeCommand((SSD1306_HEIGHT/8)-1);
 
-    HAL_I2C_Mem_Write(&hi2c1, SSD1306_I2C_ADDR, 0x40,1,ssd1306_buffer, sizeof(ssd1306_buffer), 100);
+    HAL_I2C_Mem_Write(&hi2c1, SSD1306_I2C_ADDR, 0x40,
+                      I2C_MEMADD_SIZE_8BIT, ssd1306_buffer,
+                      sizeof(ssd1306_buffer), 200);
 }
 
 void ssd1306DrawPixel(int16_t x, int16_t y, uint8_t color){
@@ -298,6 +300,45 @@ void ssd1306DrawString(int16_t x, int16_t y, const char *str, uint8_t color){
     while(*str){
         ssd1306DrawChar(x, y, *str, color);
         x+=6;
+        str++;
+    }
+}
+
+void ssd1306DrawCharScaled(int16_t x, int16_t y, char ch, uint8_t color,
+                           uint8_t scale)
+{
+    if (scale == 0)
+        return;
+
+    if (ch < ' ' || ch > '~')
+        ch = '?';
+
+    uint8_t index = (uint8_t)(ch - ' ');
+
+    for (uint8_t i = 0; i < 6; i++)
+    {
+        uint8_t line = font6x8[index][i];
+
+        for (uint8_t j = 0; j < 8; j++)
+        {
+            uint8_t pixel_color = (line & (1U << j)) ? color : !color;
+            ssd1306FillRect(x + (int16_t)i * scale,
+                            y + (int16_t)j * scale,
+                            scale, scale, pixel_color);
+        }
+    }
+}
+
+void ssd1306DrawStringScaled(int16_t x, int16_t y, const char *str,
+                             uint8_t color, uint8_t scale)
+{
+    if (str == NULL || scale == 0)
+        return;
+
+    while (*str)
+    {
+        ssd1306DrawCharScaled(x, y, *str, color, scale);
+        x += (int16_t)(6U * scale);
         str++;
     }
 }
