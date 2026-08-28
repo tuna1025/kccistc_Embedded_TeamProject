@@ -38,8 +38,6 @@
         * Output
         * EVENT_OUT
         * EXTI
-     PB6   ------> I2C1_SCL
-     PB7   ------> I2C1_SDA
 */
 void MX_GPIO_Init(void)
 {
