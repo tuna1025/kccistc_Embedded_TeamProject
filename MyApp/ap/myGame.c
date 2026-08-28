@@ -62,66 +62,10 @@ static bool s_menuAxisLatched = false;
 static bool s_guestMode = false;
 static bool s_testMode = false;
 static bool s_autoMode = false;
-static uint8_t s_cdsHitConfirmCount = 0;
 
 static bool gameIsActive(void)
 {
     return s_state == GAME_STATE_PLAYING || s_state == GAME_STATE_HIT;
-}
-
-/*
- * CDS 드라이버의 내부 상태는 건드리지 않고 현재 켜진 타겟 LED로
- * 활성 센서를 알아낸다. 레이저가 켜져 있고 해당 CDS 값이 임계값보다
- * 낮아졌을 때만 명중으로 판정한다.
- */
-static bool gameIsCdsHit(void)
-{
-    uint32_t channel;
-    uint8_t sensorIndex;
-
-    if (!laserIsOn())
-    {
-        s_cdsHitConfirmCount = 0;
-        return false;
-    }
-
-    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7) == GPIO_PIN_SET)
-    {
-        channel = ADC_CHANNEL_4;
-        sensorIndex = 0U;
-    }
-    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET)
-    {
-        channel = ADC_CHANNEL_11;
-        sensorIndex = 1U;
-    }
-    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_SET)
-    {
-        channel = ADC_CHANNEL_10;
-        sensorIndex = 2U;
-    }
-    else
-    {
-        s_cdsHitConfirmCount = 0;
-        return false;
-    }
-
-    if (readADC(channel) < cdsGetThreshold(sensorIndex))
-    {
-        if (s_cdsHitConfirmCount < CDS_HIT_CONFIRM_COUNT)
-            s_cdsHitConfirmCount++;
-    }
-    else
-    {
-        s_cdsHitConfirmCount = 0;
-    }
-
-    if (s_cdsHitConfirmCount >= CDS_HIT_CONFIRM_COUNT)
-    {
-        s_cdsHitConfirmCount = 0;
-        return true;
-    }
-    return false;
 }
 
 static uint8_t fireButtonPressed(void)
@@ -454,13 +398,15 @@ void gameUpdate(void)
     if (now - s_tickCdsHit >= CDS_HIT_CHECK_MS)
     {
         s_tickCdsHit = now;
-        if (s_state == GAME_STATE_PLAYING)
-            cdsHit = gameIsCdsHit();
-
-        /* 게임 판정 직후 같은 주기에서 드라이버의 LED/부저 상태를 갱신한다.
-           스캐닝 중에는 LED 3개가 모두 켜져 있어야 하므로 건드리지 않는다. */
+        /* 스캐닝 중에는 LED 3개가 모두 켜져 있어야 하므로 일반 CDS
+           상태 머신을 멈추고, 그 외에는 드라이버의 확정 명중만 받는다. */
         if (s_state != GAME_STATE_SCANNING)
+        {
             cdsUpdate();
+            int confirmedHit = cdsTakeHit();
+            cdsHit = (s_state == GAME_STATE_PLAYING &&
+                      confirmedHit != CDS_NONE);
+        }
     }
 
     if (s_testMode && gameIsActive() &&

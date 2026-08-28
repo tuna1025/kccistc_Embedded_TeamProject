@@ -9,11 +9,11 @@
 /* 스캔 범위 - 실측 후 조정 */
 #define TRK_PAN_MIN_DEG     60.0f
 #define TRK_PAN_MAX_DEG    120.0f
-#define TRK_TILT_MIN_DEG   110.0f
-#define TRK_TILT_MAX_DEG   140.0f
+#define TRK_TILT_MIN_DEG   122.0f
+#define TRK_TILT_MAX_DEG   160.0f
 
 #define TRK_PAN_STEP         2.0f
-#define TRK_TILT_STEP        3.0f
+#define TRK_TILT_STEP        1.0f
 
 #define TRK_SETTLE_MS        120     /* 스캔 지점 도달 후 조도 안정화 */
 

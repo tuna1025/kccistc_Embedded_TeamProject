@@ -17,6 +17,19 @@ static int8_t trkDir  = 1;
 static float trkPanMin,  trkPanMax;
 static float trkTiltMin, trkTiltMax;
 
+/* 자동 재방문: 저장 좌표 2회 실패 후 1도 사각 나선 탐색 */
+static uint8_t trkLastAimIdx = 0xFFU;
+static uint8_t trkAimAttempt = 0U;
+static int8_t trkSearchPanOffset = 0;
+static int8_t trkSearchTiltOffset = 0;
+static int8_t trkSearchPanDir = 1;
+static int8_t trkSearchTiltDir = 0;
+static uint8_t trkSearchSegmentLength = 1U;
+static uint8_t trkSearchSegmentProgress = 0U;
+static uint8_t trkSearchSegmentCount = 0U;
+static float trkAimPan = 0.0f;
+static float trkAimTilt = 0.0f;
+
 /* laserFire()는 토글이므로 원하는 상태가 아닐 때만 호출한다 */
 static void trkLaser(uint8_t on)
 {
@@ -39,6 +52,40 @@ static void trkFinish(TrkState_t next)
     trkLaser(0);
 
     trkState = next;
+}
+
+static void trkResetLocalSearch(uint8_t idx)
+{
+    trkLastAimIdx = idx;
+    trkAimAttempt = 0U;
+    trkSearchPanOffset = 0;
+    trkSearchTiltOffset = 0;
+    trkSearchPanDir = 1;
+    trkSearchTiltDir = 0;
+    trkSearchSegmentLength = 1U;
+    trkSearchSegmentProgress = 0U;
+    trkSearchSegmentCount = 0U;
+}
+
+/* 우 -> 상 -> 좌 -> 하 순서로 1도씩 움직이며 사각 나선을 만든다. */
+static void trkAdvanceLocalSearch(void)
+{
+    trkSearchPanOffset += trkSearchPanDir;
+    trkSearchTiltOffset += trkSearchTiltDir;
+    trkSearchSegmentProgress++;
+
+    if (trkSearchSegmentProgress < trkSearchSegmentLength)
+        return;
+
+    trkSearchSegmentProgress = 0U;
+
+    int8_t previousPanDir = trkSearchPanDir;
+    trkSearchPanDir = -trkSearchTiltDir;
+    trkSearchTiltDir = previousPanDir;
+
+    trkSearchSegmentCount++;
+    if ((trkSearchSegmentCount & 1U) == 0U)
+        trkSearchSegmentLength++;
 }
 
 /* --- 스캔 --- */
@@ -98,6 +145,7 @@ void trackingStart(void)
     trkPan  = trkPanMin;
     trkTilt = trkTiltMin;
     trkDir  = 1;
+    trkResetLocalSearch(0xFFU);
 
     servoSetTarget(SERVO_PAN,  trkPan);
     servoSetTarget(SERVO_TILT, trkTilt);
@@ -121,9 +169,27 @@ uint8_t trackingAimAt(uint8_t idx)
 
     trkIdx = idx;
 
-    /* 항상 같은 방향에서 접근하도록 목표보다 못 미친 지점으로 먼저 간다 */
-    servoSetTarget(SERVO_PAN,  trkPoint[idx].pan - TRK_BACKOFF_DEG);
-    servoSetTarget(SERVO_TILT, trkPoint[idx].tilt);
+    if (trkLastAimIdx != idx)
+        trkResetLocalSearch(idx);
+
+    trkAimAttempt++;
+
+    /* 첫 두 번은 저장 좌표 그대로, 세 번째부터 1도씩 주변을 탐색한다. */
+    if (trkAimAttempt > 2U)
+        trkAdvanceLocalSearch();
+
+    trkAimPan = servoClampAngle(
+        SERVO_PAN, trkPoint[idx].pan + (float)trkSearchPanOffset);
+    trkAimTilt = servoClampAngle(
+        SERVO_TILT, trkPoint[idx].tilt + (float)trkSearchTiltOffset);
+
+    /* 기어 백래시 영향을 줄이기 위해 두 축 모두 낮은 각도 쪽에서 접근한다. */
+    servoSetTarget(SERVO_PAN,
+                   servoClampAngle(SERVO_PAN,
+                                   trkAimPan - TRK_BACKOFF_DEG));
+    servoSetTarget(SERVO_TILT,
+                   servoClampAngle(SERVO_TILT,
+                                   trkAimTilt - TRK_BACKOFF_DEG));
 
     trkState = TRK_RV_BACKOFF;
 
@@ -178,15 +244,16 @@ void trackingUpdate(void)
         case TRK_RV_BACKOFF:
             if (servoIsAtTarget(SERVO_PAN) && servoIsAtTarget(SERVO_TILT))
             {
-                /* 항상 각도가 증가하는 방향으로만 목표에 접근 */
-                servoSetTarget(SERVO_PAN, trkPoint[trkIdx].pan);
+                /* 두 축 모두 항상 각도가 증가하는 방향으로 최종 접근 */
+                servoSetTarget(SERVO_PAN, trkAimPan);
+                servoSetTarget(SERVO_TILT, trkAimTilt);
 
                 trkState = TRK_RV_APPROACH;
             }
             break;
 
         case TRK_RV_APPROACH:
-            if (servoIsAtTarget(SERVO_PAN))
+            if (servoIsAtTarget(SERVO_PAN) && servoIsAtTarget(SERVO_TILT))
             {
                 trkTick  = tNow;
                 trkState = TRK_RV_SETTLE;

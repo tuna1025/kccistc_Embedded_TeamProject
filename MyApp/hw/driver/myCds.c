@@ -19,6 +19,7 @@ static ledPair pairs[SENSOR_COUNT]= {{0,GPIOC,GPIO_PIN_7},{0,GPIOA,GPIO_PIN_9},{
 static uint32_t baseline[SENSOR_COUNT] = {0};
 static uint32_t threshold[SENSOR_COUNT] = {0};
 static uint8_t hitConfirmCount = 0;
+static int hitEvent = CDS_NONE;
 
 static void ledOn(int index){
     HAL_GPIO_WritePin(pairs[index].ledPort, pairs[index].ledPin , GPIO_PIN_SET);
@@ -67,24 +68,27 @@ static uint32_t readSensor(int index){
     }
 }
 
-static void calibrateSensors(void){
-    ledAllOff();
-    /* 전원과 센서 출력이 안정된 뒤 주변광 기준값을 측정한다. */
-    HAL_Delay(CDS_CALIBRATION_DELAY_MS);
-
+static void captureBaselines(uint32_t sampleCount){
     for(int sensor = 0; sensor < SENSOR_COUNT; sensor++){
         uint32_t sum = 0;
 
-        for(uint32_t sample = 0; sample < CDS_CALIBRATION_SAMPLES; sample++){
+        for(uint32_t sample = 0; sample < sampleCount; sample++){
             sum += readSensor(sensor);
             HAL_Delay(2);
         }
 
-        baseline[sensor] = sum / CDS_CALIBRATION_SAMPLES;
+        baseline[sensor] = sum / sampleCount;
         threshold[sensor] = (baseline[sensor] > CDS_HIT_DELTA)
                           ? baseline[sensor] - CDS_HIT_DELTA
                           : 0U;
     }
+}
+
+static void calibrateSensors(void){
+    ledAllOff();
+    /* 전원과 센서 출력이 안정된 뒤 주변광 기준값을 측정한다. */
+    HAL_Delay(CDS_CALIBRATION_DELAY_MS);
+    captureBaselines(CDS_CALIBRATION_SAMPLES);
 }
 
 void cdsInit(){
@@ -96,6 +100,7 @@ void cdsInit(){
     waitStart = 0;
     scanMode = 0;
     hitConfirmCount = 0;
+    hitEvent = CDS_NONE;
     srand(HAL_GetTick());
 }
 void cdsUpdate(void){
@@ -135,6 +140,8 @@ void cdsUpdate(void){
             }
 
             if(hitConfirmCount >= CDS_HIT_CONFIRM_COUNT){
+                /* LED 소등과 상태 전환이 확정된 명중만 게임에 전달한다. */
+                hitEvent = activeSens;
                 ledOff(activeSens);
                 startRhythm();
                 prevSens = activeSens;
@@ -154,6 +161,12 @@ void cdsUpdate(void){
     }
 }
 
+int cdsTakeHit(void){
+    int hit = hitEvent;
+    hitEvent = CDS_NONE;
+    return hit;
+}
+
 int cdsGetActive(void){
     if(scanMode || state != CDS_ACTIVE){
         return CDS_NONE;
@@ -168,18 +181,57 @@ void cdsScanBegin(void){
     for(int i=0; i<SENSOR_COUNT; i++){
         ledOn(i);
     }
+
+    /* LED 3개를 동시에 켜면서 발생하는 전원/주변광 변화를 스캔 기준값에
+       포함한다. 이 함수가 끝난 뒤 trackingStart()가 레이저를 켠다. */
+    HAL_Delay(CDS_SCAN_CALIBRATION_DELAY_MS);
+    captureBaselines(CDS_SCAN_CALIBRATION_SAMPLES);
 }
 
 int cdsScanCheckHit(void){
+    uint32_t sum[SENSOR_COUNT] = {0};
+    uint32_t bestDrop = 0U;
+    uint32_t secondDrop = 0U;
+    int bestIndex = CDS_NONE;
+
+    /* 순간적인 전원 흔들림을 줄이기 위해 모든 센서를 여러 번 교차 측정한다. */
+    for(uint32_t sample=0; sample<CDS_SCAN_AVERAGE_COUNT; sample++){
+        for(int i=0; i<SENSOR_COUNT; i++){
+            if(ledLit[i] != 0){
+                sum[i] += readSensor(i);
+            }
+        }
+        HAL_Delay(1);
+    }
+
     for(int i=0; i<SENSOR_COUNT; i++){
         if(ledLit[i] == 0){
             continue;                       /* 이미 찾은 타겟은 건너뛴다 */
         }
-        pairs[i].adcVal = readSensor(i);
-        if(pairs[i].adcVal < threshold[i]){
-            return i;
+
+        pairs[i].adcVal = sum[i] / CDS_SCAN_AVERAGE_COUNT;
+        uint32_t drop = (baseline[i] > pairs[i].adcVal)
+                      ? baseline[i] - pairs[i].adcVal
+                      : 0U;
+
+        if(drop > bestDrop){
+            secondDrop = bestDrop;
+            bestDrop = drop;
+            bestIndex = i;
+        }
+        else if(drop > secondDrop){
+            secondDrop = drop;
         }
     }
+
+    /* 전원 강하는 여러 채널이 비슷하게 떨어지므로, 한 센서만 다른
+       센서보다 충분히 크게 변했을 때 레이저 명중으로 확정한다. */
+    if(bestIndex != CDS_NONE &&
+       bestDrop >= CDS_HIT_DELTA &&
+       bestDrop >= secondDrop + CDS_SCAN_WIN_MARGIN){
+        return bestIndex;
+    }
+
     return CDS_NONE;
 }
 
@@ -198,6 +250,7 @@ void cdsScanEnd(void){
     activeSens = -1;
     prevSens = -1;
     hitConfirmCount = 0;
+    hitEvent = CDS_NONE;
 }
 
 uint32_t cdsGetBaseline(uint8_t index){

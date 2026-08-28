@@ -9,8 +9,12 @@
 #define WAIT_TIME 1000
 #define CDS_CALIBRATION_SAMPLES 32U
 #define CDS_CALIBRATION_DELAY_MS 1000U
-#define CDS_HIT_DELTA 30U
-#define CDS_HIT_CONFIRM_COUNT 3U
+#define CDS_HIT_DELTA 150U
+#define CDS_HIT_CONFIRM_COUNT 5U
+#define CDS_SCAN_AVERAGE_COUNT 5U
+#define CDS_SCAN_WIN_MARGIN 80U
+#define CDS_SCAN_CALIBRATION_SAMPLES 16U
+#define CDS_SCAN_CALIBRATION_DELAY_MS 100U
 
 #define CDS_NONE (-1)
 
@@ -28,6 +32,12 @@ typedef struct{
 void cdsInit();
 void cdsUpdate(void);
 uint32_t readADC(uint32_t channel);
+
+/**
+ * @brief 일반 모드에서 확정된 명중 센서 번호를 한 번 가져온다.
+ * @return 명중 센서 index, 새 명중이 없으면 CDS_NONE
+ */
+int cdsTakeHit(void);
 
 /** @brief 현재 점등된 타겟 index. 없으면 CDS_NONE */
 int  cdsGetActive(void);
