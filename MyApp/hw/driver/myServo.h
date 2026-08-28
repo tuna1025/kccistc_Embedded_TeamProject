@@ -6,7 +6,7 @@
 
 #define SERVO_PAN    0
 #define SERVO_TILT   1
-#define SERVO_STEP_DEG   2.0f   /* 1회 갱신당 최대 이동 각도 */
+#define SERVO_STEP_DEG   1.0f   /* 1회 갱신당 최대 이동 각도 */
 /* 서보의 전체 기계적 범위 (펄스폭 환산 기준, 건드리지 말 것) */
 #define SERVO_MAX_DEG      180
 

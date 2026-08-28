@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define AIM_SPEED_DEG                      1.5f
+#define AIM_SPEED_DEG                      1.0f
 #define GAME_DURATION_MS                   60000U
 #define GAME_COUNTDOWN_MS                  3000U
 #define HIT_ANIMATION_MS                   500U
@@ -61,34 +61,11 @@ static uint8_t s_rankingIndex = 0;
 static bool s_menuAxisLatched = false;
 static bool s_guestMode = false;
 static bool s_testMode = false;
+static bool s_autoMode = false;
 
 static bool gameIsActive(void)
 {
     return s_state == GAME_STATE_PLAYING || s_state == GAME_STATE_HIT;
-}
-
-/*
- * CDS 드라이버의 내부 상태는 건드리지 않고 현재 켜진 타겟 LED로
- * 활성 센서를 알아낸다. 레이저가 켜져 있고 해당 CDS 값이 임계값보다
- * 낮아졌을 때만 명중으로 판정한다.
- */
-static bool gameIsCdsHit(void)
-{
-    uint32_t channel;
-
-    if (!laserIsOn())
-        return false;
-
-    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7) == GPIO_PIN_SET)
-        channel = ADC_CHANNEL_4;
-    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET)
-        channel = ADC_CHANNEL_11;
-    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_SET)
-        channel = ADC_CHANNEL_10;
-    else
-        return false;
-
-    return readADC(channel) < LIGHT_THRESHOLD;
 }
 
 static uint8_t fireButtonPressed(void)
@@ -142,6 +119,8 @@ static void enterMainMenu(void)
     s_state = GAME_STATE_MAIN_MENU;
     s_guestMode = false;
     s_testMode = false;
+    s_autoMode = false;
+    trackingAbort();
     s_mainMenuIndex = 0;
     s_menuAxisLatched = false;
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
@@ -194,6 +173,7 @@ static void enterGameOver(uint32_t now)
 {
     s_state = GAME_STATE_OVER;
     s_stateTick = now;
+    trackingAbort();
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
     s_gameOverMenuIndex = 0;
     s_menuAxisLatched = false;
@@ -216,6 +196,8 @@ void gameHitDetected(void)
         return;
 
     s_score++;
+    if (s_autoMode)
+        trackingAbort();          /* 현재 재방문을 끝내고 다음 타겟을 기다린다 */
     s_state = GAME_STATE_HIT;
     s_stateTick = HAL_GetTick();
     gameUiRenderHit(s_targetNumber, s_score);
@@ -244,6 +226,7 @@ static void handleButton(uint32_t now)
         {
             s_state = GAME_STATE_SCANNING;
             gameUiRenderScanning();
+            cdsScanBegin();
             trackingStart();
         }
         else
@@ -273,6 +256,7 @@ static void handleButton(uint32_t now)
     if (s_state == GAME_STATE_SCANNING)
     {
         trackingAbort();
+        cdsScanEnd();
         enterMainMenu();
         return;
     }
@@ -283,7 +267,7 @@ static void handleButton(uint32_t now)
         return;
     }
 
-    if (s_state == GAME_STATE_PLAYING && laserFire())
+    if (s_state == GAME_STATE_PLAYING && !s_autoMode && laserFire())
     {
         /* 버튼은 레이저만 ON/OFF하며 점수는 CDS가 실제 감지했을 때 올라간다. */
     }
@@ -301,8 +285,25 @@ static void updateState(uint32_t now)
     switch (s_state)
     {
         case GAME_STATE_MAIN_MENU:
-        case GAME_STATE_SCANNING:
         case GAME_STATE_RANKING:
+            break;
+
+        case GAME_STATE_SCANNING:
+            if (trackingGetState() == TRK_SCAN_DONE)
+            {
+                cdsScanEnd();
+                if (trackingGetFoundCount() > 0U)
+                {
+                    /* 스캔 성공 -> 자동 조준으로 60초 게임 진행 */
+                    s_autoMode = true;
+                    s_guestMode = true;
+                    startCountdown(now);
+                }
+                else
+                {
+                    enterMainMenu();
+                }
+            }
             break;
 
         case GAME_STATE_TAG_WAIT:
@@ -397,25 +398,33 @@ void gameUpdate(void)
     if (now - s_tickCdsHit >= CDS_HIT_CHECK_MS)
     {
         s_tickCdsHit = now;
-        if (s_state == GAME_STATE_PLAYING)
-            cdsHit = gameIsCdsHit();
-
-        /* 게임 판정 직후 같은 주기에서 드라이버의 LED/부저 상태를 갱신한다. */
-        cdsUpdate();
+        /* 스캐닝 중에는 LED 3개가 모두 켜져 있어야 하므로 일반 CDS
+           상태 머신을 멈추고, 그 외에는 드라이버의 확정 명중만 받는다. */
+        if (s_state != GAME_STATE_SCANNING)
+        {
+            cdsUpdate();
+            int confirmedHit = cdsTakeHit();
+            cdsHit = (s_state == GAME_STATE_PLAYING &&
+                      confirmedHit != CDS_NONE);
+        }
     }
 
     if (s_testMode && gameIsActive() &&
         now - s_tickCdsDebug >= CDS_DEBUG_PRINT_MS)
     {
-        char debugLine[64];
+        char debugLine[96];
         uint32_t cds1 = readADC(ADC_CHANNEL_4);
         uint32_t cds2 = readADC(ADC_CHANNEL_11);
         uint32_t cds3 = readADC(ADC_CHANNEL_10);
-        int length = snprintf(debugLine, sizeof(debugLine),
-                              "CDS1:%lu CDS2:%lu CDS3:%lu TH:%u\r\n",
-                              (unsigned long)cds1, (unsigned long)cds2,
-                              (unsigned long)cds3,
-                              (unsigned int)LIGHT_THRESHOLD);
+        int length = snprintf(
+            debugLine, sizeof(debugLine),
+            "CDS1:%lu B:%lu T:%lu CDS2:%lu B:%lu T:%lu CDS3:%lu B:%lu T:%lu\r\n",
+            (unsigned long)cds1, (unsigned long)cdsGetBaseline(0U),
+            (unsigned long)cdsGetThreshold(0U),
+            (unsigned long)cds2, (unsigned long)cdsGetBaseline(1U),
+            (unsigned long)cdsGetThreshold(1U),
+            (unsigned long)cds3, (unsigned long)cdsGetBaseline(2U),
+            (unsigned long)cdsGetThreshold(2U));
         s_tickCdsDebug = now;
         if (length > 0)
             HAL_UART_Transmit(&huart2, (uint8_t *)debugLine,
@@ -430,7 +439,7 @@ void gameUpdate(void)
         gameHitDetected();
     }
 
-    if (s_state == GAME_STATE_SCANNING)
+    if (s_state == GAME_STATE_SCANNING || s_autoMode)
         trackingUpdate();
 
     if (s_rc522Ready && now - s_tickRfid >= 200U)
@@ -499,12 +508,25 @@ void gameUpdate(void)
 
         if (gameIsActive())
         {
-            s_panAngle += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
-            s_tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
-            s_panAngle = servoClampAngle(SERVO_PAN, s_panAngle);
-            s_tiltAngle = servoClampAngle(SERVO_TILT, s_tiltAngle);
-            servoSetTarget(SERVO_PAN, s_panAngle);
-            servoSetTarget(SERVO_TILT, s_tiltAngle);
+            if (s_autoMode)
+            {
+                /* 켜진 LED의 저장 좌표로 재방문한다. 진행 중이면 건드리지 않는다. */
+                if (s_state == GAME_STATE_PLAYING && !trackingIsBusy())
+                {
+                    int active = cdsGetActive();
+                    if (active != CDS_NONE)
+                        (void)trackingAimAt((uint8_t)active);
+                }
+            }
+            else
+            {
+                s_panAngle += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
+                s_tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
+                s_panAngle = servoClampAngle(SERVO_PAN, s_panAngle);
+                s_tiltAngle = servoClampAngle(SERVO_TILT, s_tiltAngle);
+                servoSetTarget(SERVO_PAN, s_panAngle);
+                servoSetTarget(SERVO_TILT, s_tiltAngle);
+            }
             servoUpdate();
         }
         else if (s_state == GAME_STATE_SCANNING)
