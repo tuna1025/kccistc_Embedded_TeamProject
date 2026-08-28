@@ -61,6 +61,7 @@ static uint8_t s_rankingIndex = 0;
 static bool s_menuAxisLatched = false;
 static bool s_guestMode = false;
 static bool s_testMode = false;
+static bool s_autoMode = false;
 
 static bool gameIsActive(void)
 {
@@ -142,6 +143,8 @@ static void enterMainMenu(void)
     s_state = GAME_STATE_MAIN_MENU;
     s_guestMode = false;
     s_testMode = false;
+    s_autoMode = false;
+    trackingAbort();
     s_mainMenuIndex = 0;
     s_menuAxisLatched = false;
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
@@ -194,6 +197,7 @@ static void enterGameOver(uint32_t now)
 {
     s_state = GAME_STATE_OVER;
     s_stateTick = now;
+    trackingAbort();
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
     s_gameOverMenuIndex = 0;
     s_menuAxisLatched = false;
@@ -216,6 +220,8 @@ void gameHitDetected(void)
         return;
 
     s_score++;
+    if (s_autoMode)
+        trackingAbort();          /* 현재 재방문을 끝내고 다음 타겟을 기다린다 */
     s_state = GAME_STATE_HIT;
     s_stateTick = HAL_GetTick();
     gameUiRenderHit(s_targetNumber, s_score);
@@ -244,6 +250,7 @@ static void handleButton(uint32_t now)
         {
             s_state = GAME_STATE_SCANNING;
             gameUiRenderScanning();
+            cdsScanBegin();
             trackingStart();
         }
         else
@@ -273,6 +280,7 @@ static void handleButton(uint32_t now)
     if (s_state == GAME_STATE_SCANNING)
     {
         trackingAbort();
+        cdsScanEnd();
         enterMainMenu();
         return;
     }
@@ -283,7 +291,7 @@ static void handleButton(uint32_t now)
         return;
     }
 
-    if (s_state == GAME_STATE_PLAYING && laserFire())
+    if (s_state == GAME_STATE_PLAYING && !s_autoMode && laserFire())
     {
         /* 버튼은 레이저만 ON/OFF하며 점수는 CDS가 실제 감지했을 때 올라간다. */
     }
@@ -301,8 +309,25 @@ static void updateState(uint32_t now)
     switch (s_state)
     {
         case GAME_STATE_MAIN_MENU:
-        case GAME_STATE_SCANNING:
         case GAME_STATE_RANKING:
+            break;
+
+        case GAME_STATE_SCANNING:
+            if (trackingGetState() == TRK_SCAN_DONE)
+            {
+                cdsScanEnd();
+                if (trackingGetFoundCount() > 0U)
+                {
+                    /* 스캔 성공 -> 자동 조준으로 60초 게임 진행 */
+                    s_autoMode = true;
+                    s_guestMode = true;
+                    startCountdown(now);
+                }
+                else
+                {
+                    enterMainMenu();
+                }
+            }
             break;
 
         case GAME_STATE_TAG_WAIT:
@@ -400,8 +425,10 @@ void gameUpdate(void)
         if (s_state == GAME_STATE_PLAYING)
             cdsHit = gameIsCdsHit();
 
-        /* 게임 판정 직후 같은 주기에서 드라이버의 LED/부저 상태를 갱신한다. */
-        cdsUpdate();
+        /* 게임 판정 직후 같은 주기에서 드라이버의 LED/부저 상태를 갱신한다.
+           스캐닝 중에는 LED 3개가 모두 켜져 있어야 하므로 건드리지 않는다. */
+        if (s_state != GAME_STATE_SCANNING)
+            cdsUpdate();
     }
 
     if (s_testMode && gameIsActive() &&
@@ -430,7 +457,7 @@ void gameUpdate(void)
         gameHitDetected();
     }
 
-    if (s_state == GAME_STATE_SCANNING)
+    if (s_state == GAME_STATE_SCANNING || s_autoMode)
         trackingUpdate();
 
     if (s_rc522Ready && now - s_tickRfid >= 200U)
@@ -499,12 +526,25 @@ void gameUpdate(void)
 
         if (gameIsActive())
         {
-            s_panAngle += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
-            s_tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
-            s_panAngle = servoClampAngle(SERVO_PAN, s_panAngle);
-            s_tiltAngle = servoClampAngle(SERVO_TILT, s_tiltAngle);
-            servoSetTarget(SERVO_PAN, s_panAngle);
-            servoSetTarget(SERVO_TILT, s_tiltAngle);
+            if (s_autoMode)
+            {
+                /* 켜진 LED의 저장 좌표로 재방문한다. 진행 중이면 건드리지 않는다. */
+                if (s_state == GAME_STATE_PLAYING && !trackingIsBusy())
+                {
+                    int active = cdsGetActive();
+                    if (active != CDS_NONE)
+                        (void)trackingAimAt((uint8_t)active);
+                }
+            }
+            else
+            {
+                s_panAngle += joystickGetRatio(JOY_AXIS_X) * AIM_SPEED_DEG;
+                s_tiltAngle -= joystickGetRatio(JOY_AXIS_Y) * AIM_SPEED_DEG;
+                s_panAngle = servoClampAngle(SERVO_PAN, s_panAngle);
+                s_tiltAngle = servoClampAngle(SERVO_TILT, s_tiltAngle);
+                servoSetTarget(SERVO_PAN, s_panAngle);
+                servoSetTarget(SERVO_TILT, s_tiltAngle);
+            }
             servoUpdate();
         }
         else if (s_state == GAME_STATE_SCANNING)

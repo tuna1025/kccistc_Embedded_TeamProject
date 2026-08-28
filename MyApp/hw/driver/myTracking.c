@@ -2,9 +2,10 @@
 #include "myTracking.h"
 #include "myServo.h"
 #include "myLaser.h"
+#include "myCds.h"
 
 static TrkState_t trkState = TRK_IDLE;
-static TrkPoint_t trkPoint[TRK_TARGET_MAX];
+static TrkPoint_t trkPoint[TRK_TARGET_MAX];   /* 첨자 = CDS 센서 index */
 static uint8_t    trkFound = 0;
 static uint8_t    trkIdx   = 0;
 static uint32_t   trkTick  = 0;
@@ -16,6 +17,13 @@ static int8_t trkDir  = 1;
 static float trkPanMin,  trkPanMax;
 static float trkTiltMin, trkTiltMax;
 
+/* laserFire()는 토글이므로 원하는 상태가 아닐 때만 호출한다 */
+static void trkLaser(uint8_t on)
+{
+    if (laserIsOn() != on)
+        laserFire();
+}
+
 /* 스캔 범위를 서보 물리 가동범위와 교집합으로 계산 */
 static void trkCalcRange(void)
 {
@@ -25,12 +33,12 @@ static void trkCalcRange(void)
     trkTiltMax = servoClampAngle(SERVO_TILT, TRK_TILT_MAX_DEG);
 }
 
-/* 종료 처리 — 레이저 소등 경로를 한 곳으로 모은다 */
-static void trkFinish(void)
+/* 종료 처리 - 레이저 소등 경로를 한 곳으로 모은다 */
+static void trkFinish(TrkState_t next)
 {
-    laserFire();
+    trkLaser(0);
 
-    trkState = TRK_DONE;
+    trkState = next;
 }
 
 /* --- 스캔 --- */
@@ -59,50 +67,20 @@ static uint8_t trkNextPoint(void)
     return 1;
 }
 
-/* --- 재방문 --- */
-
-/* trkIdx 타겟의 백오프 지점으로 목표 설정 */
-static void trkAimBackoff(void)
+/* 현재 조준점에서 감지된 타겟이 있으면 좌표를 저장한다 */
+static void trkMeasure(void)
 {
-    servoSetTarget(SERVO_PAN,  trkPoint[trkIdx].pan - TRK_BACKOFF_DEG);
-    servoSetTarget(SERVO_TILT, trkPoint[trkIdx].tilt);
-}
+    int hit = cdsScanCheckHit();
 
-/* 다음 유효 타겟으로 이동. 남은 타겟이 없으면 0 */
-static uint8_t trkNextTarget(void)
-{
-    trkIdx++;
-
-    while (trkIdx < TRK_TARGET_MAX && trkPoint[trkIdx].valid == 0)
-        trkIdx++;
-
-    if (trkIdx >= TRK_TARGET_MAX)
-        return 0;
-
-    trkAimBackoff();
-
-    return 1;
-}
-
-/* 스캔 종료 후 재방문으로 자동 전환 */
-static void trkEnterRevisit(void)
-{
-    laserFire();
-
-    trkIdx = 0;
-
-    while (trkIdx < TRK_TARGET_MAX && trkPoint[trkIdx].valid == 0)
-        trkIdx++;
-
-    if (trkIdx >= TRK_TARGET_MAX)
-    {
-        trkFinish();            /* 하나도 못 찾음 */
+    if (hit == CDS_NONE)
         return;
-    }
 
-    trkAimBackoff();
+    trkPoint[hit].pan   = trkPan;
+    trkPoint[hit].tilt  = trkTilt;
+    trkPoint[hit].valid = 1;
+    trkFound++;
 
-    trkState = TRK_RV_BACKOFF;
+    cdsScanLedOff(hit);      /* 찾은 타겟은 소등해서 중복 검출을 막는다 */
 }
 
 /* --- 공개 함수 --- */
@@ -124,16 +102,47 @@ void trackingStart(void)
     servoSetTarget(SERVO_PAN,  trkPan);
     servoSetTarget(SERVO_TILT, trkTilt);
 
-    laserFire();
+    trkLaser(1);             /* 스캔 중에는 계속 점등 */
 
     trkState = TRK_SCAN_MOVE;
 }
 
 void trackingAbort(void)
 {
-    laserFire();
+    trkLaser(0);
 
     trkState = TRK_IDLE;
+}
+
+uint8_t trackingAimAt(uint8_t idx)
+{
+    if (idx >= TRK_TARGET_MAX || trkPoint[idx].valid == 0)
+        return 0;
+
+    trkIdx = idx;
+
+    /* 항상 같은 방향에서 접근하도록 목표보다 못 미친 지점으로 먼저 간다 */
+    servoSetTarget(SERVO_PAN,  trkPoint[idx].pan - TRK_BACKOFF_DEG);
+    servoSetTarget(SERVO_TILT, trkPoint[idx].tilt);
+
+    trkState = TRK_RV_BACKOFF;
+
+    return 1;
+}
+
+uint8_t trackingHasPoint(uint8_t idx)
+{
+    if (idx >= TRK_TARGET_MAX)
+        return 0;
+
+    return trkPoint[idx].valid;
+}
+
+uint8_t trackingIsBusy(void)
+{
+    return (trkState != TRK_IDLE &&
+            trkState != TRK_DONE &&
+            trkState != TRK_SCAN_DONE) ? 1 : 0;
 }
 
 void trackingUpdate(void)
@@ -156,18 +165,12 @@ void trackingUpdate(void)
             break;
 
         case TRK_SCAN_MEASURE:
-            /* 조도센서 판정 — 팀원 모듈 확정 후 채운다
-            if (sensorHit() && trkFound < TRK_TARGET_MAX)
-            {
-                trkPoint[trkFound].pan   = trkPan;
-                trkPoint[trkFound].tilt  = trkTilt;
-                trkPoint[trkFound].valid = 1;
-                trkFound++;
-            }
-            */
+            trkMeasure();
 
-            if (trkNextPoint() == 0)
-                trkEnterRevisit();
+            if (trkFound >= TRK_TARGET_MAX)      /* 전부 찾으면 조기 종료 */
+                trkFinish(TRK_SCAN_DONE);
+            else if (trkNextPoint() == 0)
+                trkFinish(TRK_SCAN_DONE);
             else
                 trkState = TRK_SCAN_MOVE;
             break;
@@ -193,7 +196,7 @@ void trackingUpdate(void)
         case TRK_RV_SETTLE:
             if (tNow - trkTick >= TRK_RV_SETTLE_MS)
             {
-                laserFire();
+                trkLaser(1);
 
                 trkTick  = tNow;
                 trkState = TRK_RV_FIRE;
@@ -201,15 +204,9 @@ void trackingUpdate(void)
             break;
 
         case TRK_RV_FIRE:
+            /* 명중 판정은 myGame이 하고, 여기서는 시간이 지나면 끝낸다 */
             if (tNow - trkTick >= TRK_FIRE_WAIT_MS)
-            {
-                /* 득점 판정은 조도센서 모듈에서 처리 */
-
-                if (trkNextTarget() == 0)
-                    trkFinish();
-                else
-                    trkState = TRK_RV_BACKOFF;
-            }
+                trkFinish(TRK_DONE);
             break;
 
         default:
