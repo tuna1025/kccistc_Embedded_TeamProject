@@ -7,18 +7,22 @@
 #include "myRanking.h"
 #include "myServo.h"
 #include "myTracking.h"
+#include "usart.h"
 #include "stm32f4xx_hal.h"
+#include <stdio.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #define AIM_SPEED_DEG                      1.5f
-#define GAME_DURATION_MS                   30000U
+#define GAME_DURATION_MS                   60000U
 #define GAME_COUNTDOWN_MS                  3000U
 #define HIT_ANIMATION_MS                   500U
 #define WAIT_BLINK_MS                      500U
 #define GAME_TARGET_COUNT                  3U
-#define GAME_SIMULATE_HIT_WITH_FIRE_BUTTON 1
+#define CDS_HIT_CHECK_MS                   20U
+#define CDS_DEBUG_PRINT_MS                 500U
+#define MAIN_MENU_COUNT                    5U
 
 typedef enum
 {
@@ -41,6 +45,8 @@ static uint32_t s_gameStartTick = 0;
 static uint32_t s_displayedSeconds = 0;
 static uint32_t s_tick50 = 0;
 static uint32_t s_tickRfid = 0;
+static uint32_t s_tickCdsHit = 0;
+static uint32_t s_tickCdsDebug = 0;
 static uint8_t s_countdownValue = 3;
 static uint8_t s_targetNumber = 1;
 static uint16_t s_score = 0;
@@ -54,10 +60,35 @@ static uint8_t s_gameOverMenuIndex = 0;
 static uint8_t s_rankingIndex = 0;
 static bool s_menuAxisLatched = false;
 static bool s_guestMode = false;
+static bool s_testMode = false;
 
 static bool gameIsActive(void)
 {
     return s_state == GAME_STATE_PLAYING || s_state == GAME_STATE_HIT;
+}
+
+/*
+ * CDS 드라이버의 내부 상태는 건드리지 않고 현재 켜진 타겟 LED로
+ * 활성 센서를 알아낸다. 레이저가 켜져 있고 해당 CDS 값이 임계값보다
+ * 낮아졌을 때만 명중으로 판정한다.
+ */
+static bool gameIsCdsHit(void)
+{
+    uint32_t channel;
+
+    if (!laserIsOn())
+        return false;
+
+    if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7) == GPIO_PIN_SET)
+        channel = ADC_CHANNEL_4;
+    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET)
+        channel = ADC_CHANNEL_11;
+    else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_SET)
+        channel = ADC_CHANNEL_10;
+    else
+        return false;
+
+    return readADC(channel) < LIGHT_THRESHOLD;
 }
 
 static uint8_t fireButtonPressed(void)
@@ -83,12 +114,12 @@ static int8_t menuDirection(void)
     if (value > 0.65f)
     {
         s_menuAxisLatched = true;
-        return -1;
+        return 1;
     }
     if (value < -0.65f)
     {
         s_menuAxisLatched = true;
-        return 1;
+        return -1;
     }
     return 0;
 }
@@ -110,6 +141,7 @@ static void enterMainMenu(void)
 {
     s_state = GAME_STATE_MAIN_MENU;
     s_guestMode = false;
+    s_testMode = false;
     s_mainMenuIndex = 0;
     s_menuAxisLatched = false;
     HAL_GPIO_WritePin(LASER_GPIO_Port, LASER_Pin, GPIO_PIN_RESET);
@@ -151,8 +183,11 @@ static void enterPlaying(uint32_t now)
     s_state = GAME_STATE_PLAYING;
     s_gameStartTick = now;
     s_displayedSeconds = remainingSeconds(now);
-    gameUiRenderPlaying(s_targetNumber, s_score, s_displayedSeconds,
-                        "AIMING");
+    if (s_testMode)
+        gameUiRenderTestPlaying(s_targetNumber, s_score);
+    else
+        gameUiRenderPlaying(s_targetNumber, s_score, s_displayedSeconds,
+                            "AIMING");
 }
 
 static void enterGameOver(uint32_t now)
@@ -200,6 +235,13 @@ static void handleButton(uint32_t now)
         }
         else if (s_mainMenuIndex == 2U)
         {
+            s_guestMode = true;
+            s_testMode = true;
+            s_state = GAME_STATE_PLAYER_READY;
+            gameUiRenderTest();
+        }
+        else if (s_mainMenuIndex == 3U)
+        {
             s_state = GAME_STATE_SCANNING;
             gameUiRenderScanning();
             trackingStart();
@@ -243,15 +285,14 @@ static void handleButton(uint32_t now)
 
     if (s_state == GAME_STATE_PLAYING && laserFire())
     {
-#if GAME_SIMULATE_HIT_WITH_FIRE_BUTTON
-        gameHitDetected();
-#endif
+        /* 버튼은 레이저만 ON/OFF하며 점수는 CDS가 실제 감지했을 때 올라간다. */
     }
 }
 
 static void updateState(uint32_t now)
 {
-    if (gameIsActive() && now - s_gameStartTick >= GAME_DURATION_MS)
+    if (!s_testMode && gameIsActive() &&
+        now - s_gameStartTick >= GAME_DURATION_MS)
     {
         enterGameOver(now);
         return;
@@ -296,6 +337,8 @@ static void updateState(uint32_t now)
 
         case GAME_STATE_PLAYING:
         {
+            if (s_testMode)
+                break;
             uint32_t seconds = remainingSeconds(now);
             if (seconds != s_displayedSeconds)
             {
@@ -313,8 +356,11 @@ static void updateState(uint32_t now)
                     (uint8_t)((s_targetNumber % GAME_TARGET_COUNT) + 1U);
                 s_state = GAME_STATE_PLAYING;
                 s_displayedSeconds = remainingSeconds(now);
-                gameUiRenderPlaying(s_targetNumber, s_score,
-                                    s_displayedSeconds, "AIMING");
+                if (s_testMode)
+                    gameUiRenderTestPlaying(s_targetNumber, s_score);
+                else
+                    gameUiRenderPlaying(s_targetNumber, s_score,
+                                        s_displayedSeconds, "AIMING");
             }
             break;
 
@@ -346,7 +392,43 @@ void gameInit(void)
 void gameUpdate(void)
 {
     uint32_t now = HAL_GetTick();
-    cdsUpdate();
+    bool cdsHit = false;
+
+    if (now - s_tickCdsHit >= CDS_HIT_CHECK_MS)
+    {
+        s_tickCdsHit = now;
+        if (s_state == GAME_STATE_PLAYING)
+            cdsHit = gameIsCdsHit();
+
+        /* 게임 판정 직후 같은 주기에서 드라이버의 LED/부저 상태를 갱신한다. */
+        cdsUpdate();
+    }
+
+    if (s_testMode && gameIsActive() &&
+        now - s_tickCdsDebug >= CDS_DEBUG_PRINT_MS)
+    {
+        char debugLine[64];
+        uint32_t cds1 = readADC(ADC_CHANNEL_4);
+        uint32_t cds2 = readADC(ADC_CHANNEL_11);
+        uint32_t cds3 = readADC(ADC_CHANNEL_10);
+        int length = snprintf(debugLine, sizeof(debugLine),
+                              "CDS1:%lu CDS2:%lu CDS3:%lu TH:%u\r\n",
+                              (unsigned long)cds1, (unsigned long)cds2,
+                              (unsigned long)cds3,
+                              (unsigned int)LIGHT_THRESHOLD);
+        s_tickCdsDebug = now;
+        if (length > 0)
+            HAL_UART_Transmit(&huart2, (uint8_t *)debugLine,
+                              (uint16_t)length, 20U);
+    }
+
+    if (cdsHit)
+    {
+        /* 명중 후 레이저를 꺼 중복 득점을 방지한다. */
+        if (laserIsOn())
+            (void)laserFire();
+        gameHitDetected();
+    }
 
     if (s_state == GAME_STATE_SCANNING)
         trackingUpdate();
@@ -384,7 +466,8 @@ void gameUpdate(void)
             if (s_state == GAME_STATE_MAIN_MENU)
             {
                 s_mainMenuIndex =
-                    (uint8_t)((s_mainMenuIndex + direction + 4) % 4);
+                    (uint8_t)((s_mainMenuIndex + direction +
+                               MAIN_MENU_COUNT) % MAIN_MENU_COUNT);
                 gameUiRenderMainMenu(s_mainMenuIndex);
             }
             else if (s_state == GAME_STATE_RANKING)

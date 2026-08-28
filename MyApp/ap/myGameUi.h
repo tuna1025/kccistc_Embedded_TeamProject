@@ -6,11 +6,14 @@
 /** @brief LCD1602와 SSD1306 OLED를 초기화한다. */
 void gameUiInit(void);
 
-/** @brief 메인 메뉴를 표시한다. @param selected 0: 일반, 1: 게스트, 2: 스캐닝, 3: 랭킹 */
+/** @brief 메인 메뉴를 표시한다. @param selected 0: 일반, 1: 게스트, 2: 테스트, 3: 스캐닝, 4: 랭킹 */
 void gameUiRenderMainMenu(uint8_t selected);
 
 /** @brief RFID 없이 게임을 시작하는 게스트 준비 화면을 표시한다. */
 void gameUiRenderGuest(void);
+
+/** @brief 시간 제한과 랭킹 저장이 없는 CDS 테스트 모드 준비 화면을 표시한다. */
+void gameUiRenderTest(void);
 
 /** @brief 아직 구현되지 않은 스캐닝 모드 안내 화면을 표시한다. */
 void gameUiRenderScanning(void);
@@ -58,6 +61,9 @@ void gameUiRenderCountdown(uint8_t value);
  */
 void gameUiRenderPlaying(uint8_t target, uint16_t score,
                          uint32_t remainingSeconds, const char *status);
+
+/** @brief 시간 제한 없는 테스트 모드의 타겟과 점수를 표시한다. */
+void gameUiRenderTestPlaying(uint8_t target, uint16_t score);
 
 /** @brief 명중 애니메이션과 갱신된 점수를 표시한다. */
 void gameUiRenderHit(uint8_t target, uint16_t score);
