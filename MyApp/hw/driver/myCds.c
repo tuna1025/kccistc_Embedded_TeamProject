@@ -1,6 +1,7 @@
 #include "myCds.h"
 #include "adc.h"
 #include "main.h"
+#include "myLaser.h"
 #include "myPiezo.h"
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_hal_adc.h"
@@ -15,6 +16,9 @@ static uint32_t waitStart = 0;
 static uint8_t scanMode = 0;
 static uint8_t ledLit[SENSOR_COUNT] = {0, 0, 0};
 static ledPair pairs[SENSOR_COUNT]= {{0,GPIOC,GPIO_PIN_7},{0,GPIOA,GPIO_PIN_9},{0,GPIOA,GPIO_PIN_8}};
+static uint32_t baseline[SENSOR_COUNT] = {0};
+static uint32_t threshold[SENSOR_COUNT] = {0};
+static uint8_t hitConfirmCount = 0;
 
 static void ledOn(int index){
     HAL_GPIO_WritePin(pairs[index].ledPort, pairs[index].ledPin , GPIO_PIN_SET);
@@ -62,13 +66,36 @@ static uint32_t readSensor(int index){
             return 0;
     }
 }
+
+static void calibrateSensors(void){
+    ledAllOff();
+    /* 전원과 센서 출력이 안정된 뒤 주변광 기준값을 측정한다. */
+    HAL_Delay(CDS_CALIBRATION_DELAY_MS);
+
+    for(int sensor = 0; sensor < SENSOR_COUNT; sensor++){
+        uint32_t sum = 0;
+
+        for(uint32_t sample = 0; sample < CDS_CALIBRATION_SAMPLES; sample++){
+            sum += readSensor(sensor);
+            HAL_Delay(2);
+        }
+
+        baseline[sensor] = sum / CDS_CALIBRATION_SAMPLES;
+        threshold[sensor] = (baseline[sensor] > CDS_HIT_DELTA)
+                          ? baseline[sensor] - CDS_HIT_DELTA
+                          : 0U;
+    }
+}
+
 void cdsInit(){
     ledAllOff();
+    calibrateSensors();
     state = CDS_SELECT;
     activeSens = -1;
     prevSens = -1;
     waitStart = 0;
     scanMode = 0;
+    hitConfirmCount = 0;
     srand(HAL_GetTick());
 }
 void cdsUpdate(void){
@@ -82,15 +109,37 @@ void cdsUpdate(void){
             activeSens = selectRandom(prevSens);
             ledAllOff();
             ledOn(activeSens);
+            hitConfirmCount = 0;
             state = CDS_ACTIVE;
             break;
         case CDS_ACTIVE:
             pairs[activeSens].adcVal = readSensor(activeSens);
-            if(pairs[activeSens].adcVal < LIGHT_THRESHOLD){
+
+            /* 레이저가 꺼져 있을 때 주변광 변화를 천천히 기준값에 반영한다. */
+            if(!laserIsOn()){
+                baseline[activeSens] =
+                    (baseline[activeSens] * 31U + pairs[activeSens].adcVal) / 32U;
+                threshold[activeSens] =
+                    (baseline[activeSens] > CDS_HIT_DELTA)
+                    ? baseline[activeSens] - CDS_HIT_DELTA
+                    : 0U;
+                hitConfirmCount = 0;
+            }
+            else if(pairs[activeSens].adcVal < threshold[activeSens]){
+                if(hitConfirmCount < CDS_HIT_CONFIRM_COUNT){
+                    hitConfirmCount++;
+                }
+            }
+            else{
+                hitConfirmCount = 0;
+            }
+
+            if(hitConfirmCount >= CDS_HIT_CONFIRM_COUNT){
                 ledOff(activeSens);
                 startRhythm();
                 prevSens = activeSens;
                 waitStart = HAL_GetTick();
+                hitConfirmCount = 0;
                 state = CDS_WAIT;
             }
             break;
@@ -127,7 +176,7 @@ int cdsScanCheckHit(void){
             continue;                       /* 이미 찾은 타겟은 건너뛴다 */
         }
         pairs[i].adcVal = readSensor(i);
-        if(pairs[i].adcVal < LIGHT_THRESHOLD){
+        if(pairs[i].adcVal < threshold[i]){
             return i;
         }
     }
@@ -148,4 +197,13 @@ void cdsScanEnd(void){
     state = CDS_SELECT;
     activeSens = -1;
     prevSens = -1;
+    hitConfirmCount = 0;
+}
+
+uint32_t cdsGetBaseline(uint8_t index){
+    return (index < SENSOR_COUNT) ? baseline[index] : 0U;
+}
+
+uint32_t cdsGetThreshold(uint8_t index){
+    return (index < SENSOR_COUNT) ? threshold[index] : 0U;
 }

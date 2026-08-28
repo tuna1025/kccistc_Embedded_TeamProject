@@ -7,7 +7,10 @@
 
 #define SENSOR_COUNT 3
 #define WAIT_TIME 1000
-#define LIGHT_THRESHOLD 700
+#define CDS_CALIBRATION_SAMPLES 32U
+#define CDS_CALIBRATION_DELAY_MS 1000U
+#define CDS_HIT_DELTA 30U
+#define CDS_HIT_CONFIRM_COUNT 3U
 
 #define CDS_NONE (-1)
 
@@ -42,3 +45,8 @@ void cdsScanLedOff(int index);
 
 /** @brief 스캐닝 모드를 끝내고 일반 상태머신으로 복귀한다. */
 void cdsScanEnd(void);
+
+/** @brief 부팅 시 측정한 센서별 주변광 평균값을 반환한다. */
+uint32_t cdsGetBaseline(uint8_t index);
+/** @brief 센서별 명중 임계값(주변광 평균 - CDS_HIT_DELTA)을 반환한다. */
+uint32_t cdsGetThreshold(uint8_t index);

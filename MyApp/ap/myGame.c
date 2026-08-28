@@ -14,7 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#define AIM_SPEED_DEG                      1.5f
+#define AIM_SPEED_DEG                      1.0f
 #define GAME_DURATION_MS                   60000U
 #define GAME_COUNTDOWN_MS                  3000U
 #define HIT_ANIMATION_MS                   500U
@@ -62,6 +62,7 @@ static bool s_menuAxisLatched = false;
 static bool s_guestMode = false;
 static bool s_testMode = false;
 static bool s_autoMode = false;
+static uint8_t s_cdsHitConfirmCount = 0;
 
 static bool gameIsActive(void)
 {
@@ -76,20 +77,51 @@ static bool gameIsActive(void)
 static bool gameIsCdsHit(void)
 {
     uint32_t channel;
+    uint8_t sensorIndex;
 
     if (!laserIsOn())
+    {
+        s_cdsHitConfirmCount = 0;
         return false;
+    }
 
     if (HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_7) == GPIO_PIN_SET)
+    {
         channel = ADC_CHANNEL_4;
+        sensorIndex = 0U;
+    }
     else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_9) == GPIO_PIN_SET)
+    {
         channel = ADC_CHANNEL_11;
+        sensorIndex = 1U;
+    }
     else if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_8) == GPIO_PIN_SET)
+    {
         channel = ADC_CHANNEL_10;
+        sensorIndex = 2U;
+    }
     else
+    {
+        s_cdsHitConfirmCount = 0;
         return false;
+    }
 
-    return readADC(channel) < LIGHT_THRESHOLD;
+    if (readADC(channel) < cdsGetThreshold(sensorIndex))
+    {
+        if (s_cdsHitConfirmCount < CDS_HIT_CONFIRM_COUNT)
+            s_cdsHitConfirmCount++;
+    }
+    else
+    {
+        s_cdsHitConfirmCount = 0;
+    }
+
+    if (s_cdsHitConfirmCount >= CDS_HIT_CONFIRM_COUNT)
+    {
+        s_cdsHitConfirmCount = 0;
+        return true;
+    }
+    return false;
 }
 
 static uint8_t fireButtonPressed(void)
@@ -434,15 +466,19 @@ void gameUpdate(void)
     if (s_testMode && gameIsActive() &&
         now - s_tickCdsDebug >= CDS_DEBUG_PRINT_MS)
     {
-        char debugLine[64];
+        char debugLine[96];
         uint32_t cds1 = readADC(ADC_CHANNEL_4);
         uint32_t cds2 = readADC(ADC_CHANNEL_11);
         uint32_t cds3 = readADC(ADC_CHANNEL_10);
-        int length = snprintf(debugLine, sizeof(debugLine),
-                              "CDS1:%lu CDS2:%lu CDS3:%lu TH:%u\r\n",
-                              (unsigned long)cds1, (unsigned long)cds2,
-                              (unsigned long)cds3,
-                              (unsigned int)LIGHT_THRESHOLD);
+        int length = snprintf(
+            debugLine, sizeof(debugLine),
+            "CDS1:%lu B:%lu T:%lu CDS2:%lu B:%lu T:%lu CDS3:%lu B:%lu T:%lu\r\n",
+            (unsigned long)cds1, (unsigned long)cdsGetBaseline(0U),
+            (unsigned long)cdsGetThreshold(0U),
+            (unsigned long)cds2, (unsigned long)cdsGetBaseline(1U),
+            (unsigned long)cdsGetThreshold(1U),
+            (unsigned long)cds3, (unsigned long)cdsGetBaseline(2U),
+            (unsigned long)cdsGetThreshold(2U));
         s_tickCdsDebug = now;
         if (length > 0)
             HAL_UART_Transmit(&huart2, (uint8_t *)debugLine,
