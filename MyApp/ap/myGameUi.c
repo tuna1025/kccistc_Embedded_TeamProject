@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define GAME_DURATION_SECONDS 30U
+#define GAME_DURATION_SECONDS 60U
 
 static bool s_lcdReady = false;
 static bool s_oledReady = false;
@@ -52,12 +52,12 @@ void gameUiInit(void)
 
 void gameUiRenderMainMenu(uint8_t selected)
 {
-    static const char *items[4] = {
-        "NORMAL", "GUEST", "SCANNING", "RANKING"
+    static const char *items[5] = {
+        "NORMAL", "GUEST", "TEST", "SCANNING", "RANKING"
     };
     char line[17];
 
-    snprintf(line, sizeof(line), ">%s", items[selected % 4U]);
+    snprintf(line, sizeof(line), ">%s", items[selected % 5U]);
     lcdWriteLine(0, "SELECT MODE");
     lcdWriteLine(1, line);
 
@@ -65,13 +65,26 @@ void gameUiRenderMainMenu(uint8_t selected)
         return;
     ssd1306Clear();
     oledDrawCentered(0, "MODE SELECT", 1);
-    for (uint8_t i = 0; i < 4U; i++)
+    for (uint8_t i = 0; i < 5U; i++)
     {
         snprintf(line, sizeof(line), "%c %s",
                  i == selected ? '>' : ' ', items[i]);
-        ssd1306DrawString(18, (int16_t)(15 + i * 12), line,
+        ssd1306DrawString(18, (int16_t)(13 + i * 10), line,
                           SSD1306_COLOR_WHITE);
     }
+    ssd1306Update();
+}
+
+void gameUiRenderTest(void)
+{
+    lcdWriteLine(0, "CDS TEST MODE");
+    lcdWriteLine(1, "NO TIME LIMIT");
+
+    if (!s_oledReady)
+        return;
+    ssd1306Clear();
+    oledDrawCentered(8, "TEST MODE", 2);
+    oledDrawCentered(40, "PRESS START", 1);
     ssd1306Update();
 }
 
@@ -245,6 +258,23 @@ void gameUiRenderPlaying(uint8_t target, uint16_t score,
     ssd1306DrawRect(10, 49, 108, 10, SSD1306_COLOR_WHITE);
     if (barWidth > 0)
         ssd1306FillRect(12, 51, barWidth, 6, SSD1306_COLOR_WHITE);
+    ssd1306Update();
+}
+
+void gameUiRenderTestPlaying(uint8_t target, uint16_t score)
+{
+    char line[24];
+    snprintf(line, sizeof(line), "TGT:%u SCORE:%02u", target,
+             (unsigned int)(score % 100U));
+    lcdWriteLine(0, line);
+    lcdWriteLine(1, "CDS UART DEBUG");
+
+    if (!s_oledReady)
+        return;
+    ssd1306Clear();
+    oledDrawCentered(5, "TEST MODE", 2);
+    oledDrawCentered(35, "NO TIME LIMIT", 1);
+    oledDrawCentered(51, "LASER -> CDS", 1);
     ssd1306Update();
 }
 
