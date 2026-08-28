@@ -6,6 +6,7 @@
 #include "myRc522.h"
 #include "myRanking.h"
 #include "myServo.h"
+#include "myTracking.h"
 #include "stm32f4xx_hal.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -201,6 +202,7 @@ static void handleButton(uint32_t now)
         {
             s_state = GAME_STATE_SCANNING;
             gameUiRenderScanning();
+            trackingStart();
         }
         else
         {
@@ -226,7 +228,14 @@ static void handleButton(uint32_t now)
         return;
     }
 
-    if (s_state == GAME_STATE_SCANNING || s_state == GAME_STATE_RANKING)
+    if (s_state == GAME_STATE_SCANNING)
+    {
+        trackingAbort();
+        enterMainMenu();
+        return;
+    }
+
+    if (s_state == GAME_STATE_RANKING)
     {
         enterMainMenu();
         return;
@@ -339,6 +348,9 @@ void gameUpdate(void)
     uint32_t now = HAL_GetTick();
     cdsUpdate();
 
+    if (s_state == GAME_STATE_SCANNING)
+        trackingUpdate();
+
     if (s_rc522Ready && now - s_tickRfid >= 200U)
     {
         rc522Uid_t uid;
@@ -410,6 +422,10 @@ void gameUpdate(void)
             s_tiltAngle = servoClampAngle(SERVO_TILT, s_tiltAngle);
             servoSetTarget(SERVO_PAN, s_panAngle);
             servoSetTarget(SERVO_TILT, s_tiltAngle);
+            servoUpdate();
+        }
+        else if (s_state == GAME_STATE_SCANNING)
+        {
             servoUpdate();
         }
     }
