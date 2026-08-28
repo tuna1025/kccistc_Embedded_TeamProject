@@ -27,4 +27,5 @@ float servoGetAngle(uint8_t ch);
 void servoSetTarget(uint8_t ch, float deg);
 void servoUpdate(void);
 float servoClampAngle(uint8_t ch, float deg);
+uint8_t servoIsAtTarget(uint8_t ch);
 #endif
