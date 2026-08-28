@@ -12,13 +12,17 @@ static cdsState state = CDS_SELECT;
 static int activeSens = -1;
 static int prevSens = -1;
 static uint32_t waitStart = 0;
+static uint8_t scanMode = 0;
+static uint8_t ledLit[SENSOR_COUNT] = {0, 0, 0};
 static ledPair pairs[SENSOR_COUNT]= {{0,GPIOC,GPIO_PIN_7},{0,GPIOA,GPIO_PIN_9},{0,GPIOA,GPIO_PIN_8}};
 
 static void ledOn(int index){
     HAL_GPIO_WritePin(pairs[index].ledPort, pairs[index].ledPin , GPIO_PIN_SET);
+    ledLit[index] = 1;
 }
 static void ledOff(int index){
     HAL_GPIO_WritePin(pairs[index].ledPort, pairs[index].ledPin , GPIO_PIN_RESET);
+    ledLit[index] = 0;
 }
 static void ledAllOff(void){
     for(int i=0; i<SENSOR_COUNT; i++){
@@ -64,9 +68,15 @@ void cdsInit(){
     activeSens = -1;
     prevSens = -1;
     waitStart = 0;
+    scanMode = 0;
     srand(HAL_GetTick());
 }
 void cdsUpdate(void){
+    /* 스캐닝 중에는 LED 3개가 모두 켜져 있어야 하므로 랜덤 선택을 멈춘다 */
+    if(scanMode){
+        return;
+    }
+
     switch (state) {
         case CDS_SELECT:
             activeSens = selectRandom(prevSens);
@@ -93,4 +103,49 @@ void cdsUpdate(void){
             state = CDS_SELECT;
             break;
     }
+}
+
+int cdsGetActive(void){
+    if(scanMode || state != CDS_ACTIVE){
+        return CDS_NONE;
+    }
+    return activeSens;
+}
+
+/* --- 스캐닝 모드 --- */
+
+void cdsScanBegin(void){
+    scanMode = 1;
+    for(int i=0; i<SENSOR_COUNT; i++){
+        ledOn(i);
+    }
+}
+
+int cdsScanCheckHit(void){
+    for(int i=0; i<SENSOR_COUNT; i++){
+        if(ledLit[i] == 0){
+            continue;                       /* 이미 찾은 타겟은 건너뛴다 */
+        }
+        pairs[i].adcVal = readSensor(i);
+        if(pairs[i].adcVal < LIGHT_THRESHOLD){
+            return i;
+        }
+    }
+    return CDS_NONE;
+}
+
+void cdsScanLedOff(int index){
+    if(index < 0 || index >= SENSOR_COUNT){
+        return;
+    }
+    ledOff(index);
+    startRhythm();
+}
+
+void cdsScanEnd(void){
+    scanMode = 0;
+    ledAllOff();
+    state = CDS_SELECT;
+    activeSens = -1;
+    prevSens = -1;
 }
